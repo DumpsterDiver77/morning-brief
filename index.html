@@ -61,6 +61,18 @@ body{margin:0;padding:0;background:#EFEFED;font-family:Arial,Helvetica,sans-seri
 .hist ol{margin:4px 0 0;padding:0;list-style:none;}
 .hist li{padding:5px 0;border-top:1px dashed #E8E8E6;}
 .hist .hd{color:#1F1F1F;font-weight:bold;white-space:nowrap;}
+.hist .msg{margin:3px 0 0 0;padding:3px 0 3px 8px;border-left:3px solid #E8E8E6;color:#1F1F1F;}
+.hist .msg.in{border-left-color:#9DBF9E;}
+.hist .msg.nt{color:#8A8A88;font-style:italic;}
+.hist .mw{color:#6E6E6C;font-weight:bold;}
+.hist .mt{white-space:pre-wrap;word-break:break-word;}
+.hist .via{color:#9A9A98;font-size:11.5px;}
+.hist details.more{display:inline;}
+.hist details.more summary{display:inline;font-weight:normal;color:#1F1F1F;list-style:none;padding:0;}
+.hist details.more summary:after{content:"";}
+.hist details.more[open] summary{display:none;}
+.hist .mlink{color:#2F6FB2;text-decoration:underline;cursor:pointer;}
+.hist ol{max-height:none;}
 .actions{margin-top:10px;display:flex;flex-wrap:wrap;gap:6px;}
 .btn{display:inline-block;padding:8px 14px;border:1px solid #CFCFCC;border-radius:8px;background:#fff;color:#1F1F1F;font-size:12.5px;font-weight:bold;cursor:pointer;font-family:inherit;}
 .btn:disabled{opacity:.55;cursor:default;}
@@ -285,14 +297,30 @@ function groupItems(items){
   });
 }
 
-// Plain history (newest last, collapsed) and one sentence on why this message now; built by history.py.
+// Full contact history (oldest first, newest last), collapsed by default; built by history.py.
+// Each day/channel entry carries every message on file in "msgs" with who, time and the full text.
+const LONG_MSG = 320;
+function msgText(t){
+  const s = String(t || '');
+  if(s.length <= LONG_MSG) return '<span class="mt">'+esc(s)+'</span>';
+  const cut = s.slice(0, LONG_MSG).replace(/\s+\S*$/, '');
+  return '<details class="more"><summary><span class="mt">'+esc(cut)+'\u2026</span> <span class="mlink">Show full text</span></summary><span class="mt">'+esc(s)+'</span></details>';
+}
+function histRow(x){
+  const ms = x.msgs && x.msgs.length ? x.msgs : [{time:'', who:x.who||'', text:x.text, has_text:true, via:''}];
+  const body = ms.map(m => '<div class="msg'+(m.inbound ? ' in' : '')+(m.has_text === false ? ' nt' : '')+'">' +
+      '<span class="mw">'+esc([m.who, m.time].filter(Boolean).join(', '))+(m.who || m.time ? ':' : '')+'</span> ' + msgText(m.text) +
+      (m.via ? ' <span class="via">('+esc(m.via)+')</span>' : '') + '</div>').join('');
+  return '<li><div class="hd">'+esc(x.date)+' \u00b7 '+esc(x.channel)+(ms.length > 1 ? ' \u00b7 '+ms.length+' messages' : '')+'</div>'+body+'</li>';
+}
 function contextHtml(it){
   const note = it.note && it.note !== 'None' && it.kind === 'bots' ? '<div class="why"><b>Your note:</b> '+esc(it.note)+'</div>' : '';
   const h = it.history || [];
+  const n = h.reduce((a, x) => a + ((x.msgs && x.msgs.length) || 1), 0);
   const rows = h.length
-    ? h.map(x => '<li><span class="hd">'+esc(x.date)+' \u00b7 '+esc(x.channel)+'</span> '+esc(x.text)+'</li>').join('')
+    ? h.map(histRow).join('')
     : '<li>No earlier messages found.'+(it.history_fallback && it.history_fallback !== it.why_plain ? ' Bot notes: '+esc(it.history_fallback) : '')+'</li>';
-  const label = h.length ? 'History ('+h.length+(h.length === 1 ? ' touch' : ' touches')+', last '+esc(h[h.length-1].date)+')' : 'History (none found)';
+  const label = h.length ? 'History ('+n+(n === 1 ? ' message' : ' messages')+', first '+esc(h[0].date)+', last '+esc(h[h.length-1].date)+')' : 'History (none found)';
   return note + '<div class="why"><b>Why this message now:</b> '+esc(it.why_plain||'')+'</div>' +
     '<details class="hist"><summary>'+label+'</summary><ol>'+rows+'</ol></details>';
 }
