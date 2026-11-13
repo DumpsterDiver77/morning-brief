@@ -125,6 +125,18 @@ table.grid thead th{border-top:0;font-size:11px;color:#6E6E6C;font-weight:normal
     </div>
   </div>
 </div>
+<div id="ask-overlay" class="overlay" role="dialog" aria-modal="true">
+  <div class="modal">
+    <h3>Ask about this card</h3>
+    <p class="note" id="ask-who"></p>
+    <textarea id="ask-text" placeholder="For example: why this name? What are you planning here?"></textarea>
+    <p class="note">The bot that owns this card answers in its own chat. Asking never approves or sends anything.</p>
+    <div class="row">
+      <button type="button" class="btn" id="ask-cancel">Cancel</button>
+      <button type="button" class="btn solid" id="ask-send">Send question</button>
+    </div>
+  </div>
+</div>
 <script>
 const API_URL = "https://script.google.com/macros/s/AKfycbz5ZdrO6qKHbD2mkddFU4mp1TqVSfDsu7gGD36sz8Tpf_UEanCROdSjd8W4dPOBVCIK/exec";
 let PAYLOAD = null;
@@ -182,6 +194,10 @@ function apiSetApproval(item, action, ok, err){
     return;
   }
   google.script.run.withSuccessHandler(ok).withFailureHandler(err).setApproval(withLink(item, {action:action}), linkToken());
+}
+function apiAsk(item, text, ok, err){
+  if(API_URL){ apiPost('ask', withLink(item, {question:text}), ok, err); return; }
+  ok({ok:false, error:'Local preview \u2014 no question was sent.'});
 }
 function apiSaveDraft(item, text, ok, err){
   if(API_URL){ apiPost('draft', withLink(item, {draft:text}), ok, err); return; }
@@ -348,6 +364,7 @@ function itemHtml(it, kindExtra){
           '<button type="button" class="btn" data-act="edit">Edit</button>' +
           '<button type="button" class="btn" data-act="hold">Hold</button>' +
           '<button type="button" class="btn" data-act="remove">Remove</button>' +
+          '<button type="button" class="btn" data-act="ask">Ask</button>' +
         '</div><div class="status" data-status="1"></div>'
       : '<div class="status bad">This item could not be matched to a sheet row, so the buttons are off.</div>') +
     '</div>';
@@ -406,7 +423,7 @@ function render(){
     '<div class="px">'+tiles+'</div>' +
     '<div class="px toc">In this brief: Needs your eyes \u00b7 Outreach, last 7 days \u00b7 What each bot did \u00b7 Fleet health \u00b7 Usage</div>' +
     '<div class="px"><div class="sec-kicker">Needs your eyes</div>' +
-    '<div class="sec-sub">Every item waiting on you, newest first, with the full draft and why the bot wrote it. Anything over 7 days moves to Stale. Approve, Hold and Remove update that row on the approval sheet. Edit opens the draft so you can save a change first.</div>' +
+    '<div class="sec-sub">Every item waiting on you, newest first, with the full draft and why the bot wrote it. Anything over 7 days moves to Stale. Approve, Hold and Remove update that row on the approval sheet. Edit opens the draft so you can save a change first. Ask sends a question to the bot that owns the card; it answers in its own chat.</div>' +
     cards + qCards + '</div>' +
     '<div class="px"><div class="sec-kicker">Outreach, last 7 days</div>' +
     '<div class="sec-sub">'+esc(v.range_txt||'')+'. Red means under goal.</div></div>' +
@@ -447,6 +464,14 @@ function wire(){
       document.getElementById('edit-text').focus();
       return;
     }
+    if(act === 'ask'){
+      asking = {item, box};
+      document.getElementById('ask-who').textContent = item.who;
+      document.getElementById('ask-text').value = '';
+      document.getElementById('ask-overlay').classList.add('on');
+      document.getElementById('ask-text').focus();
+      return;
+    }
     if(act === 'remove' && !confirm('Remove this item? That writes N in Approve on the sheet.')) return;
     btn.disabled = true;
     setStatus(status, true, 'Saving\u2026');
@@ -469,6 +494,32 @@ function wire(){
       setStatus(status, false, String(err && err.message ? err.message : err));
     });
   });
+  const closeAsk = () => { document.getElementById('ask-overlay').classList.remove('on'); asking = null; };
+  document.getElementById('ask-cancel').onclick = closeAsk;
+  document.getElementById('ask-overlay').addEventListener('click', ev => { if(ev.target.id === 'ask-overlay') closeAsk(); });
+  document.getElementById('ask-send').onclick = () => {
+    if(!asking) return;
+    const text = document.getElementById('ask-text').value.trim();
+    if(!text){ document.getElementById('ask-text').focus(); return; }
+    const {item, box} = asking;
+    const status = box.querySelector('[data-status]');
+    const send = document.getElementById('ask-send');
+    send.disabled = true;
+    setStatus(status, true, 'Sending question\u2026');
+    apiAsk(item, text, res => {
+      send.disabled = false;
+      if(!res || !res.ok){
+        setStatus(status, false, (res && res.error) || 'Could not send the question.');
+        return;
+      }
+      closeAsk();
+      const who = res.answers_in || res.bot;
+      setStatus(status, true, 'Question sent. ' + who + ' will answer in its own chat, usually within a few minutes.');
+    }, err => {
+      send.disabled = false;
+      setStatus(status, false, String(err && err.message ? err.message : err));
+    });
+  };
   document.getElementById('edit-cancel').onclick = () => {
     document.getElementById('overlay').classList.remove('on');
     editing = null;
