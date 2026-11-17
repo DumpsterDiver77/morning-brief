@@ -105,6 +105,10 @@ table.grid thead th{border-top:0;font-size:11px;color:#6E6E6C;font-weight:normal
 .modal h3{margin:0 0 8px;font-size:16px;}
 .modal textarea{width:100%;min-height:180px;font:14px/1.5 Arial,Helvetica,sans-serif;padding:10px;border:1px solid #CFCFCC;border-radius:8px;resize:vertical;}
 .modal .row{margin-top:12px;display:flex;gap:8px;justify-content:flex-end;}
+.modal.reason{max-width:420px;}
+.modal.reason textarea{min-height:88px;}
+.modal label{display:block;margin:8px 0 6px;font-size:13px;font-weight:bold;}
+.modal .hint{font-weight:normal;color:#6E6E6C;}
 </style>
 </head>
 <body>
@@ -122,6 +126,17 @@ table.grid thead th{border-top:0;font-size:11px;color:#6E6E6C;font-weight:normal
     <div class="row">
       <button type="button" class="btn" id="edit-cancel">Cancel</button>
       <button type="button" class="btn solid" id="edit-save">Save draft</button>
+    </div>
+  </div>
+</div>
+<div id="reason-overlay" class="overlay" role="dialog" aria-modal="true">
+  <div class="modal reason">
+    <h3 id="reason-title">Remove</h3>
+    <label for="reason-text">Reason <span class="hint">(optional)</span></label>
+    <textarea id="reason-text"></textarea>
+    <div class="row">
+      <button type="button" class="btn" id="reason-cancel">Cancel</button>
+      <button type="button" class="btn solid" id="reason-yes">Yes</button>
     </div>
   </div>
 </div>
@@ -187,13 +202,14 @@ function apiPost(fn, item, ok, err){
     body: JSON.stringify({fn: fn, item: item, token: linkToken()})})
     .then(r => r.json()).then(ok).catch(err);
 }
-function apiSetApproval(item, action, ok, err){
-  if(API_URL){ apiPost('set', withLink(item, {action:action}), ok, err); return; }
+function apiSetApproval(item, action, ok, err, reason){
+  const payload = withLink(item, {action:action, reason: reason || ''});
+  if(API_URL){ apiPost('set', payload, ok, err); return; }
   if(LOCAL || !(window.google && google.script && google.script.run)){
     ok({ok:false, error:'Local preview \u2014 the approval sheet is not being changed.'});
     return;
   }
-  google.script.run.withSuccessHandler(ok).withFailureHandler(err).setApproval(withLink(item, {action:action}), linkToken());
+  google.script.run.withSuccessHandler(ok).withFailureHandler(err).setApproval(payload, linkToken());
 }
 function apiAsk(item, text, ok, err){
   if(API_URL){ apiPost('ask', withLink(item, {question:text}), ok, err); return; }
@@ -412,7 +428,7 @@ function render(){
     const last = (c.last_two_touches||[]).map(t => t.channel+' '+t.direction+' '+t.date).join(', ') || 'no recent touches';
     const plan = (c.plan||[]).map(x => '<li>'+esc(x)+'</li>').join('');
     const dr = c.draft ? '<div class="draft" style="margin-top:6px;"><b>Draft</b> ('+esc(c.channel||'')+'; '+esc(c.send_window||'')+'): '+esc(c.draft)+'</div>' : '';
-    return '<div class="card" style="padding:12px 14px;" data-pe-key="'+esc(c.account_key||'')+'" data-pe-play="'+esc(c.play||'')+'"><div class="role">'+esc(c.label||'')+' \u00b7 '+esc(c.confidence||'')+' confidence \u00b7 '+esc(c.track_record||'')+'</div>' +
+    return '<div class="card" style="padding:12px 14px;" data-pe-key="'+esc(c.account_key||'')+'" data-pe-play="'+esc(c.play||'')+'" data-pe-contact="'+esc(c.contact||'')+'" data-pe-company="'+esc(c.company||'')+'"><div class="role">'+esc(c.label||'')+' \u00b7 '+esc(c.confidence||'')+' confidence \u00b7 '+esc(c.track_record||'')+'</div>' +
       '<h2 style="margin:4px 0;">'+esc(c.headline||'')+'</h2><div>'+esc(c.why_now||'')+'</div>' +
       '<div class="role" style="margin-top:4px;">Last touches: '+esc(last)+'</div><ol style="margin:6px 0 0 18px;padding:0;">'+plan+'</ol>'+dr+'<div class="pe-fb" style="margin-top:8px;display:flex;flex-wrap:wrap;gap:6px;">' + [['do_it','Do it'],['not_now','Not now'],['not_useful','Not useful'],['never','Never this']].map(b => '<button type="button" class="pe-tap" data-tap="'+b[0]+'" style="padding:6px 10px;border:1px solid #ccc;border-radius:6px;background:#fff;cursor:pointer;">'+b[1]+'</button>').join('') + '<span class="pe-status" style="font-size:12px;color:#6E6E6C;align-self:center;"></span></div>'+'</div>';
   };
@@ -492,27 +508,31 @@ function wire(){
       document.getElementById('ask-text').focus();
       return;
     }
-    if(act === 'remove' && !confirm('Remove this item? That writes N in Approve on the sheet.')) return;
-    btn.disabled = true;
-    setStatus(status, true, 'Saving\u2026');
-    apiSetApproval(item, act, res => {
-      btn.disabled = false;
-      if(!res || !res.ok){
-        setStatus(status, false, (res && res.error) || 'Could not update the row.');
-        return;
-      }
-      const label = {Y:'Approved', Hold:'On hold', N:'Removed'}[res.written && res.written.approve] || 'Saved';
-      item.approve = res.written.approve;
-      const chips = box.querySelector('.chips');
-      chips.querySelectorAll('[data-chip]').forEach(c => c.remove());
-      if(res.written.approve === 'Hold') chips.insertAdjacentHTML('beforeend','<span class="chip hold" data-chip="hold">On hold</span>');
-      if(res.written.approve === 'Y') chips.insertAdjacentHTML('beforeend','<span class="chip saved" data-chip="saved">Approved</span>');
-      if(res.written.approve === 'N') chips.insertAdjacentHTML('beforeend','<span class="chip" data-chip="saved">Removed</span>');
-      setStatus(status, true, label + ' \u2014 saved on ' + res.tab + ' row ' + res.row + '.');
-    }, err => {
-      btn.disabled = false;
-      setStatus(status, false, String(err && err.message ? err.message : err));
-    });
+    const applyApproval = (reason) => {
+      btn.disabled = true;
+      setStatus(status, true, 'Saving\u2026');
+      apiSetApproval(item, act, res => {
+        btn.disabled = false;
+        if(!res || !res.ok){
+          setStatus(status, false, (res && res.error) || 'Could not update the row.');
+          return;
+        }
+        const label = {Y:'Approved', Hold:'On hold', N:'Removed'}[res.written && res.written.approve] || 'Saved';
+        item.approve = res.written.approve;
+        if(res.written && res.written.reason) item.note = res.written.reason;
+        const chips = box.querySelector('.chips');
+        chips.querySelectorAll('[data-chip]').forEach(c => c.remove());
+        if(res.written.approve === 'Hold') chips.insertAdjacentHTML('beforeend','<span class="chip hold" data-chip="hold">On hold</span>');
+        if(res.written.approve === 'Y') chips.insertAdjacentHTML('beforeend','<span class="chip saved" data-chip="saved">Approved</span>');
+        if(res.written.approve === 'N') chips.insertAdjacentHTML('beforeend','<span class="chip" data-chip="saved">Removed</span>');
+        setStatus(status, true, label + ' \u2014 saved on ' + res.tab + ' row ' + res.row + '.');
+      }, err => {
+        btn.disabled = false;
+        setStatus(status, false, String(err && err.message ? err.message : err));
+      }, reason || '');
+    };
+    if(act === 'remove'){ openReasonPopup('Remove', applyApproval); return; }
+    applyApproval('');
   });
   const closeAsk = () => { document.getElementById('ask-overlay').classList.remove('on'); asking = null; };
   document.getElementById('ask-cancel').onclick = closeAsk;
@@ -582,16 +602,53 @@ function peWire(){
     if(s && s.tap) peMark(card, s.tap, 'Saved: ' + (PE_LABEL[s.tap]||s.tap) + (s.reason ? ' (' + s.reason + ')' : ''));
   });
   document.querySelectorAll('.pe-tap').forEach(btn => btn.onclick = () => {
-    const card = btn.closest('[data-pe-key]'); const tap = btn.dataset.tap; let reason = '';
-    if(tap === 'not_useful'){ reason = prompt('Why not useful? (already handled / wrong person or owner / weak evidence / other)', 'already handled'); if(reason === null) return; }
-    if(tap === 'never' && !confirm('Never show this move for this account again?')) return;
-    if(!API_URL){ peMark(card, '', 'Local preview: not saved.'); return; }
-    peMark(card, tap, 'Saving\u2026');
-    apiPost('feedback', withLink({account_key: card.dataset.peKey, play: card.dataset.pePlay, headline: (card.querySelector('h2')||{}).textContent || ''}, {tap: tap, reason: reason}),
-      res => { if(res && res.ok){ peMark(card, tap, 'Saved: ' + PE_LABEL[tap] + (reason ? ' (' + reason + ')' : '')); } else { peMark(card, '', 'Not saved: ' + ((res && res.error) || 'try again')); } },
-      e => peMark(card, '', 'Not saved: ' + String(e && e.message ? e.message : e)));
+    const card = btn.closest('[data-pe-key]'); const tap = btn.dataset.tap;
+    const save = (reason) => {
+      if(!API_URL){ peMark(card, '', 'Local preview: not saved.'); return; }
+      peMark(card, tap, 'Saving\u2026');
+      apiPost('feedback', withLink({
+        account_key: card.dataset.peKey, play: card.dataset.pePlay,
+        headline: (card.querySelector('h2')||{}).textContent || '',
+        contact: card.dataset.peContact || '', company: card.dataset.peCompany || ''
+      }, {tap: tap, reason: reason || ''}),
+        res => { const why = (res && res.reason != null && res.reason !== '') ? res.reason : (reason || ''); if(res && res.ok){ peMark(card, tap, 'Saved: ' + PE_LABEL[tap] + (why ? ' (' + why + ')' : '')); } else { peMark(card, '', 'Not saved: ' + ((res && res.error) || 'try again')); } },
+        e => peMark(card, '', 'Not saved: ' + String(e && e.message ? e.message : e)));
+    };
+    if(tap === 'not_useful' || tap === 'never'){ openReasonPopup(PE_LABEL[tap] || tap, save); return; }
+    save('');
   });
 }
+
+let reasonCb = null;
+function openReasonPopup(title, onYes){
+  reasonCb = onYes;
+  document.getElementById('reason-title').textContent = title;
+  const ta = document.getElementById('reason-text');
+  ta.value = '';
+  ta.removeAttribute('placeholder');
+  document.getElementById('reason-overlay').classList.add('on');
+  ta.focus();
+}
+function closeReasonPopup(){
+  document.getElementById('reason-overlay').classList.remove('on');
+  reasonCb = null;
+}
+document.getElementById('reason-cancel').onclick = () => closeReasonPopup();
+document.getElementById('reason-overlay').addEventListener('click', ev => {
+  if(ev.target.id === 'reason-overlay') closeReasonPopup();
+});
+document.getElementById('reason-yes').onclick = () => {
+  const cb = reasonCb;
+  const text = String((document.getElementById('reason-text') || {}).value || '').trim();
+  closeReasonPopup();
+  if(cb) cb(text);
+};
+document.addEventListener('keydown', ev => {
+  if(ev.key === 'Escape' && document.getElementById('reason-overlay') && document.getElementById('reason-overlay').classList.contains('on')){
+    ev.preventDefault();
+    closeReasonPopup();
+  }
+});
 
 function bootFromApi(){
   const q = new URLSearchParams(location.search || location.hash.replace(/^#/, ''));
