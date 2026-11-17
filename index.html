@@ -449,13 +449,50 @@ function render(){
 
   // Proactive Engine trial (A0391/A0392): Missed moves at the top, conversion list below. Read-only display; drafts go out only via Approved rows.
   const PE = (PAYLOAD.extras && PAYLOAD.extras.proactive_engine) || {};
+  const peChannel = ch => {
+    const x = String(ch||'').toLowerCase();
+    if(/rc_transcript|ringcentral|\bcall\b/.test(x)) return 'call';
+    if(/pipedrive/.test(x)) return 'Pipedrive';
+    if(/bee|sms|imessage|\btext\b/.test(x)) return 'text';
+    if(/gmail|email/.test(x)) return 'email';
+    if(/linkedin/.test(x)) return 'LinkedIn';
+    return '';
+  };
+  const peTouch = t => {
+    const ch = peChannel(t.channel);
+    const inbound = /from them|\bin\b|inbound/i.test(String(t.direction||''));
+    const when = String(t.date||'').trim();
+    let line = inbound ? 'They reached out' : 'You reached out';
+    if(ch === 'call') line = inbound ? 'They called you' : 'You called them';
+    else if(ch === 'text') line = inbound ? 'They texted you' : 'You texted them';
+    else if(ch === 'email') line = inbound ? 'They emailed you' : 'You emailed them';
+    else if(ch === 'LinkedIn') line = inbound ? 'They messaged you on LinkedIn' : 'You messaged them on LinkedIn';
+    else if(ch === 'Pipedrive') line = inbound ? 'A Pipedrive note from them' : 'A Pipedrive note from you';
+    return when ? line+' on '+when : line;
+  };
   const peCard = c => {
-    const last = (c.last_two_touches||[]).map(t => t.channel+' '+t.direction+' '+t.date).join(', ') || 'no recent touches';
+    const saved = ((PAYLOAD && PAYLOAD.engine_taps) || {})[(c.account_key||'')+'|'+(c.play||'')] || {};
+    const draftText = (saved.draft && String(saved.draft).trim()) ? String(saved.draft) : String(c.draft||'');
+    const last = (c.last_two_touches||[]).map(peTouch).filter(Boolean);
     const plan = (c.plan||[]).map(x => '<li>'+esc(x)+'</li>').join('');
-    const dr = c.draft ? '<div class="draft" style="margin-top:6px;"><b>Draft</b> ('+esc(c.channel||'')+'; '+esc(c.send_window||'')+'): '+esc(c.draft)+'</div>' : '';
-    return '<div class="card" style="padding:12px 14px;" data-pe-key="'+esc(c.account_key||'')+'" data-pe-play="'+esc(c.play||'')+'" data-pe-contact="'+esc(c.contact||'')+'" data-pe-company="'+esc(c.company||'')+'"><div class="role">'+esc(c.label||'')+' \u00b7 '+esc(c.confidence||'')+' confidence \u00b7 '+esc(c.track_record||'')+'</div>' +
-      '<h2 style="margin:4px 0;">'+esc(c.headline||'')+'</h2><div>'+esc(c.why_now||'')+'</div>' +
-      '<div class="role" style="margin-top:4px;">Last touches: '+esc(last)+'</div><ol style="margin:6px 0 0 18px;padding:0;">'+plan+'</ol>'+dr+'<div class="pe-fb" style="margin-top:8px;display:flex;flex-wrap:wrap;gap:6px;">' + [['do_it','Do it'],['not_now','Not now'],['not_useful','Not useful'],['never','Never this']].map(b => '<button type="button" class="pe-tap" data-tap="'+b[0]+'" style="padding:6px 10px;border:1px solid #ccc;border-radius:6px;background:#fff;cursor:pointer;">'+b[1]+'</button>').join('') + '<span class="pe-status" style="font-size:12px;color:#6E6E6C;align-self:center;"></span></div>'+'</div>';
+    const happened = String(c.why_now||'').replace(/\brc_transcript\b/ig,'call').replace(/\bringcentral\b/ig,'call');
+    const dr = draftText
+      ? '<div class="happened"><b>What we\'d send:</b></div><div class="draft" data-draft="1">'+esc(draftText)+'</div>'
+      : '';
+    const details = plan
+      ? '<details class="hist pe-plan-details"><summary>Who would handle this</summary><ol>'+plan+'</ol></details>'
+      : '';
+    const editBtn = draftText
+      ? '<button type="button" class="pe-edit" style="padding:6px 10px;border:1px solid #ccc;border-radius:6px;background:#fff;cursor:pointer;">Edit</button>'
+      : '';
+    const btns = [['do_it','Do it'],['not_now','Not now'],['not_useful','Not useful'],['never','Never this']].map(b => '<button type="button" class="pe-tap" data-tap="'+b[0]+'" style="padding:6px 10px;border:1px solid #ccc;border-radius:6px;background:#fff;cursor:pointer;">'+b[1]+'</button>').join('') + editBtn;
+    return '<div class="card" style="padding:12px 14px;" data-pe-key="'+esc(c.account_key||'')+'" data-pe-play="'+esc(c.play||'')+'" data-pe-contact="'+esc(c.contact||'')+'" data-pe-company="'+esc(c.company||'')+'" data-pe-headline="'+esc(c.headline||'')+'" data-draft="'+esc(draftText)+'">' +
+      (c.label ? '<div class="role">'+esc(c.label)+'</div>' : '') +
+      '<h2 style="margin:4px 0;">'+esc(c.headline||'')+'</h2>' +
+      (happened ? '<div class="happened"><b>What happened:</b> '+esc(happened)+'</div>' : '') +
+      (last.length ? '<div class="role" style="margin-top:4px;">'+esc(last.join(' \u00b7 '))+'</div>' : '') +
+      dr + details +
+      '<div class="pe-fb" style="margin-top:8px;display:flex;flex-wrap:wrap;gap:6px;">' + btns + '<span class="pe-status" style="font-size:12px;color:#6E6E6C;align-self:center;"></span></div></div>';
   };
   const peHtml = ((PE.missed_moves||[]).length || (PE.conversion_list||[]).length)
     ? '<div class="px"><div class="sec-kicker">Missed moves (trial)</div><div class="sec-sub">The few moves most worth making today, new business first. Nothing is sent; drafts go out only after your Y on the approvals sheet.</div>' +
@@ -595,6 +632,25 @@ function wire(){
   document.getElementById('edit-save').onclick = () => {
     if(!editing) return;
     const text = document.getElementById('edit-text').value;
+    if(editing.kind === 'engine'){
+      const card = editing.card;
+      const close = () => { document.getElementById('overlay').classList.remove('on'); editing = null; };
+      const st = card.querySelector('.pe-status');
+      if(st) st.textContent = 'Saving\u2026';
+      peSetDraft(card, text);
+      const after = res => {
+        if(res && res.ok){ peSetDraft(card, text); if(st) st.textContent = 'Draft saved.'; close(); }
+        else { if(st) st.textContent = 'Not saved: ' + ((res && res.error) || 'try again'); }
+      };
+      if(!API_URL){ after({ok:true, local:true}); return; }
+      apiPost('feedback', withLink({
+        account_key: card.dataset.peKey, play: card.dataset.pePlay,
+        headline: card.dataset.peHeadline || '',
+        contact: card.dataset.peContact || '', company: card.dataset.peCompany || '',
+        tap: 'edit', draft: text
+      }), after, e => { if(st) st.textContent = 'Not saved: ' + String(e && e.message ? e.message : e); });
+      return;
+    }
     const {item, box} = editing;
     const status = box.querySelector('[data-status]');
     setStatus(status, true, 'Saving\u2026');
@@ -626,11 +682,41 @@ function peMark(card, tap, note){
   card.querySelectorAll('.pe-tap').forEach(b => { const on = b.dataset.tap === tap; b.style.background = on ? '#1F1F1F' : '#fff'; b.style.color = on ? '#fff' : '#1F1F1F'; });
   const st = card.querySelector('.pe-status'); if(st) st.textContent = note || '';
 }
+function peCurrentDraft(card){
+  const el = card.querySelector('[data-draft]');
+  if(el && el.getAttribute('data-draft') !== '1' && el.getAttribute('data-draft') != null && el.getAttribute('data-draft') !== '')
+    return el.getAttribute('data-draft');
+  if(card.getAttribute('data-draft')) return card.getAttribute('data-draft');
+  const body = card.querySelector('.draft');
+  return body ? (body.textContent || '') : '';
+}
+function peSetDraft(card, text){
+  const t = String(text||'');
+  card.setAttribute('data-draft', t);
+  const box = card.querySelector('.draft');
+  if(box){
+    box.setAttribute('data-draft', '1');
+    box.textContent = t;
+  }
+}
 function peWire(){
   const saved = (PAYLOAD && PAYLOAD.engine_taps) || {};
   document.querySelectorAll('[data-pe-key]').forEach(card => {
     const s = saved[card.dataset.peKey + '|' + card.dataset.pePlay];
+    if(s && s.draft) peSetDraft(card, s.draft);
     if(s && s.tap) peMark(card, s.tap, 'Saved: ' + (PE_LABEL[s.tap]||s.tap) + (s.reason ? ' (' + s.reason + ')' : ''));
+    const editBtn = card.querySelector('.pe-edit');
+    if(editBtn){
+      editBtn.onclick = () => {
+        editing = {kind:'engine', card: card};
+        const title = document.getElementById('edit-title');
+        if(title) title.textContent = 'Edit what we would send';
+        document.getElementById('edit-who').textContent = (card.querySelector('h2')||{}).textContent || '';
+        document.getElementById('edit-text').value = peCurrentDraft(card);
+        document.getElementById('overlay').classList.add('on');
+        document.getElementById('edit-text').focus();
+      };
+    }
   });
   document.querySelectorAll('.pe-tap').forEach(btn => btn.onclick = () => {
     const card = btn.closest('[data-pe-key]'); const tap = btn.dataset.tap;
@@ -639,8 +725,9 @@ function peWire(){
       peMark(card, tap, 'Saving\u2026');
       apiPost('feedback', withLink({
         account_key: card.dataset.peKey, play: card.dataset.pePlay,
-        headline: (card.querySelector('h2')||{}).textContent || '',
-        contact: card.dataset.peContact || '', company: card.dataset.peCompany || ''
+        headline: card.dataset.peHeadline || (card.querySelector('h2')||{}).textContent || '',
+        contact: card.dataset.peContact || '', company: card.dataset.peCompany || '',
+        draft: peCurrentDraft(card)
       }, {tap: tap, reason: reason || ''}),
         res => { const why = (res && res.reason != null && res.reason !== '') ? res.reason : (reason || ''); if(res && res.ok){ peMark(card, tap, 'Saved: ' + PE_LABEL[tap] + (why ? ' (' + why + ')' : '')); } else { peMark(card, '', 'Not saved: ' + ((res && res.error) || 'try again')); } },
         e => peMark(card, '', 'Not saved: ' + String(e && e.message ? e.message : e)));
