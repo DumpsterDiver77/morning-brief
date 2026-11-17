@@ -395,9 +395,9 @@ function render(){
     const last = (c.last_two_touches||[]).map(t => t.channel+' '+t.direction+' '+t.date).join(', ') || 'no recent touches';
     const plan = (c.plan||[]).map(x => '<li>'+esc(x)+'</li>').join('');
     const dr = c.draft ? '<div class="draft" style="margin-top:6px;"><b>Draft</b> ('+esc(c.channel||'')+'; '+esc(c.send_window||'')+'): '+esc(c.draft)+'</div>' : '';
-    return '<div class="card" data-pe-key="'+esc(c.account_key||'')+'" data-pe-play="'+esc(c.play||'')+'"><div class="role">'+esc(c.label||'')+' \u00b7 '+esc(c.confidence||'')+' confidence \u00b7 '+esc(c.track_record||'')+'</div>' +
+    return '<div class="card" style="padding:12px 14px;" data-pe-key="'+esc(c.account_key||'')+'" data-pe-play="'+esc(c.play||'')+'"><div class="role">'+esc(c.label||'')+' \u00b7 '+esc(c.confidence||'')+' confidence \u00b7 '+esc(c.track_record||'')+'</div>' +
       '<h2 style="margin:4px 0;">'+esc(c.headline||'')+'</h2><div>'+esc(c.why_now||'')+'</div>' +
-      '<div class="role" style="margin-top:4px;">Last touches: '+esc(last)+'</div><ol style="margin:6px 0 0 18px;padding:0;">'+plan+'</ol>'+dr+'<div class="pe-fb"></div></div>';
+      '<div class="role" style="margin-top:4px;">Last touches: '+esc(last)+'</div><ol style="margin:6px 0 0 18px;padding:0;">'+plan+'</ol>'+dr+'<div class="pe-fb" style="margin-top:8px;display:flex;flex-wrap:wrap;gap:6px;">' + [['do_it','Do it'],['not_now','Not now'],['not_useful','Not useful'],['never','Never this']].map(b => '<button type="button" class="pe-tap" data-tap="'+b[0]+'" style="padding:6px 10px;border:1px solid #ccc;border-radius:6px;background:#fff;cursor:pointer;">'+b[1]+'</button>').join('') + '<span class="pe-status" style="font-size:12px;color:#6E6E6C;align-self:center;"></span></div>'+'</div>';
   };
   const peHtml = ((PE.missed_moves||[]).length || (PE.conversion_list||[]).length)
     ? '<div class="px"><div class="sec-kicker">Missed moves (trial)</div><div class="sec-sub">The few moves most worth making today, new business first. Nothing is sent; drafts go out only after your Y on the approvals sheet.</div>' +
@@ -435,6 +435,7 @@ function render(){
     '<div class="footer">Compiled from the live approval sheet, Grok\'s usage record and the bots\' reports. Urgent items still reach you right away.<br>BPM Services \u00b7 <a href="https://www.bpmhelps.com">bpmhelps.com</a></div>';
 
   wire();
+  peWire();
 }
 
 let editing = null;
@@ -511,6 +512,32 @@ function wire(){
       editing = null;
     }, err => setStatus(status, false, String(err && err.message ? err.message : err)));
   };
+}
+
+
+// Proactive Engine taps (A0392 item 9): every click is saved at once to the Engine feedback tab through the web app; the page
+// shows what was saved (and re-shows saved taps after a reload from PAYLOAD.engine_taps). Nothing lives only in the browser.
+const PE_LABEL = {do_it:'Do it', not_now:'Not now', not_useful:'Not useful', never:'Never this', undo:'Undone'};
+function peMark(card, tap, note){
+  card.querySelectorAll('.pe-tap').forEach(b => { const on = b.dataset.tap === tap; b.style.background = on ? '#1F1F1F' : '#fff'; b.style.color = on ? '#fff' : '#1F1F1F'; });
+  const st = card.querySelector('.pe-status'); if(st) st.textContent = note || '';
+}
+function peWire(){
+  const saved = (PAYLOAD && PAYLOAD.engine_taps) || {};
+  document.querySelectorAll('[data-pe-key]').forEach(card => {
+    const s = saved[card.dataset.peKey + '|' + card.dataset.pePlay];
+    if(s && s.tap) peMark(card, s.tap, 'Saved: ' + (PE_LABEL[s.tap]||s.tap) + (s.reason ? ' (' + s.reason + ')' : ''));
+  });
+  document.querySelectorAll('.pe-tap').forEach(btn => btn.onclick = () => {
+    const card = btn.closest('[data-pe-key]'); const tap = btn.dataset.tap; let reason = '';
+    if(tap === 'not_useful'){ reason = prompt('Why not useful? (already handled / wrong person or owner / weak evidence / other)', 'already handled'); if(reason === null) return; }
+    if(tap === 'never' && !confirm('Never show this move for this account again?')) return;
+    if(!API_URL){ peMark(card, '', 'Local preview: not saved.'); return; }
+    peMark(card, tap, 'Saving\u2026');
+    apiPost('feedback', withLink({account_key: card.dataset.peKey, play: card.dataset.pePlay, headline: (card.querySelector('h2')||{}).textContent || ''}, {tap: tap, reason: reason}),
+      res => { if(res && res.ok){ peMark(card, tap, 'Saved: ' + PE_LABEL[tap] + (reason ? ' (' + reason + ')' : '')); } else { peMark(card, '', 'Not saved: ' + ((res && res.error) || 'try again')); } },
+      e => peMark(card, '', 'Not saved: ' + String(e && e.message ? e.message : e)));
+  });
 }
 
 function bootFromApi(){
