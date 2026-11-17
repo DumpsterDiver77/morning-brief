@@ -389,6 +389,22 @@ function render(){
       '<a class="foot-link" href="'+esc(v.dash_url||'#')+'">Answer in the chat \u2192</a></div>';
   }).join('');
 
+  // Proactive Engine trial (A0391/A0392): Missed moves at the top, conversion list below. Read-only display; drafts go out only via Approved rows.
+  const PE = (PAYLOAD.extras && PAYLOAD.extras.proactive_engine) || {};
+  const peCard = c => {
+    const last = (c.last_two_touches||[]).map(t => t.channel+' '+t.direction+' '+t.date).join(', ') || 'no recent touches';
+    const plan = (c.plan||[]).map(x => '<li>'+esc(x)+'</li>').join('');
+    const dr = c.draft ? '<div class="draft" style="margin-top:6px;"><b>Draft</b> ('+esc(c.channel||'')+'; '+esc(c.send_window||'')+'): '+esc(c.draft)+'</div>' : '';
+    return '<div class="card" data-pe-key="'+esc(c.account_key||'')+'" data-pe-play="'+esc(c.play||'')+'"><div class="role">'+esc(c.label||'')+' \u00b7 '+esc(c.confidence||'')+' confidence \u00b7 '+esc(c.track_record||'')+'</div>' +
+      '<h2 style="margin:4px 0;">'+esc(c.headline||'')+'</h2><div>'+esc(c.why_now||'')+'</div>' +
+      '<div class="role" style="margin-top:4px;">Last touches: '+esc(last)+'</div><ol style="margin:6px 0 0 18px;padding:0;">'+plan+'</ol>'+dr+'<div class="pe-fb"></div></div>';
+  };
+  const peHtml = ((PE.missed_moves||[]).length || (PE.conversion_list||[]).length)
+    ? '<div class="px"><div class="sec-kicker">Missed moves (trial)</div><div class="sec-sub">The few moves most worth making today, new business first. Nothing is sent; drafts go out only after your Y on the approvals sheet.</div>' +
+        (PE.missed_moves||[]).map(peCard).join('') + '</div>' +
+      ((PE.conversion_list||[]).length ? '<div class="px"><details><summary class="sec-kicker" style="cursor:pointer;">Conversion list (trial): '+PE.conversion_list.length+' leads</summary>' + PE.conversion_list.map(peCard).join('') + '</details></div>' : '')
+    : '';
+
   const did = (v.did && v.did.length)
     ? '<table class="did">' + v.did.map(pair => '<tr><td class="lab">'+esc(pair[0])+'</td><td>'+esc(pair[1])+'</td></tr>').join('') + '</table>'
     : '<div class="notyet"><b style="color:#1F1F1F;">Not connected yet.</b> Each bot will write a few lines on what it did overnight; Dash is setting that up.</div>';
@@ -404,7 +420,8 @@ function render(){
       '<div style="text-align:right;"><div class="kicker">Morning brief</div><div class="h1">'+esc(v.date_txt||brief)+'</div></div>' +
     '</div>' +
     '<div class="px">'+tiles+'</div>' +
-    '<div class="px toc">In this brief: Needs your eyes \u00b7 Outreach, last 7 days \u00b7 What each bot did \u00b7 Fleet health \u00b7 Usage</div>' +
+    peHtml +
+    '<div class="px toc">In this brief: '+(peHtml?'Missed moves \u00b7 ':'')+'Needs your eyes \u00b7 Outreach, last 7 days \u00b7 What each bot did \u00b7 Fleet health \u00b7 Usage</div>' +
     '<div class="px"><div class="sec-kicker">Needs your eyes</div>' +
     '<div class="sec-sub">Every item waiting on you, newest first, with the full draft and why the bot wrote it. Anything over 7 days moves to Stale. Approve, Hold and Remove update that row on the approval sheet. Edit opens the draft so you can save a change first.</div>' +
     cards + qCards + '</div>' +
