@@ -637,10 +637,10 @@ function wire(){
       const close = () => { document.getElementById('overlay').classList.remove('on'); editing = null; };
       const st = card.querySelector('.pe-status');
       if(st) st.textContent = 'Saving\u2026';
-      peSetDraft(card, text);
+      const prev = peCurrentDraft(card);
       const after = res => {
         if(res && res.ok){ peSetDraft(card, text); if(st) st.textContent = 'Draft saved.'; close(); }
-        else { if(st) st.textContent = 'Not saved: ' + ((res && res.error) || 'try again'); }
+        else { peSetDraft(card, prev); if(st) st.textContent = 'Not saved: ' + ((res && res.error) || 'try again'); }
       };
       if(!API_URL){ after({ok:true, local:true}); return; }
       apiPost('feedback', withLink({
