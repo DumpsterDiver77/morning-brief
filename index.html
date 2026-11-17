@@ -53,6 +53,10 @@ body{margin:0;padding:0;background:#EFEFED;font-family:Arial,Helvetica,sans-seri
 .draft{margin-top:8px;padding:10px 12px;background:#F5F5F4;border-left:3px solid #FF2800;border-radius:6px;font-size:14px;color:#1F1F1F;line-height:1.5;white-space:pre-wrap;word-break:break-word;}
 .why{margin-top:7px;font-size:12.5px;color:#6E6E6C;line-height:1.5;}
 .why b{color:#1F1F1F;}
+.happened,.want,.do{margin-top:7px;font-size:13px;color:#1F1F1F;line-height:1.5;}
+.happened b,.want b,.do b,.draft-label{color:#1F1F1F;}
+.draft-label{display:block;margin-top:8px;font-size:12px;font-weight:bold;}
+.no-draft{margin-top:8px;font-size:12.5px;color:#6E6E6C;line-height:1.45;}
 .hist{margin-top:6px;font-size:12.5px;color:#6E6E6C;line-height:1.45;}
 .hist summary{cursor:pointer;color:#1F1F1F;font-weight:bold;list-style:none;padding:4px 0;}
 .hist summary::-webkit-details-marker{display:none;}
@@ -353,15 +357,22 @@ function contextHtml(it){
     ? h.map(histRow).join('')
     : '<li>No earlier messages found.'+(it.history_fallback && it.history_fallback !== it.why_plain ? ' Bot notes: '+esc(it.history_fallback) : '')+'</li>';
   const label = h.length ? 'History ('+n+(n === 1 ? ' message' : ' messages')+', first '+esc(h[0].date)+', last '+esc(h[h.length-1].date)+')' : 'History (none found)';
+  const internal = it.plain && it.plain.internal
+    ? '<li><div class="hd">Internal details (hidden from the card)</div><div class="msg"><span class="mt">'+esc(it.plain.internal)+'</span></div></li>'
+    : '';
+  if(it.plain && it.plain.title){
+    return note + '<details class="hist"><summary>'+label+'</summary><ol>'+rows+internal+'</ol></details>';
+  }
   return note + '<div class="why"><b>Why this message now:</b> '+esc(it.why_plain||'')+'</div>' +
-    '<details class="hist"><summary>'+label+'</summary><ol>'+rows+'</ol></details>';
+    '<details class="hist"><summary>'+label+'</summary><ol>'+rows+internal+'</ol></details>';
 }
 
 function itemHtml(it, kindExtra){
   const a = age(it.date, PAYLOAD.brief);
   const old = /days$/.test(a) && parseInt(a,10) >= 3;
   const hold = (it.approve === 'Hold');
-  let chips = '<span class="chip">'+esc(it.type || kindExtra || '')+'</span>';
+  const p = it.plain || null;
+  let chips = '<span class="chip">'+esc((p && p.type_label) || it.type || kindExtra || '')+'</span>';
   if(hold) chips += '<span class="chip hold" data-chip="hold">On hold</span>';
   if(it.approve === 'Y') chips += '<span class="chip saved" data-chip="saved">Approved</span>';
   if(it.approve === 'N') chips += '<span class="chip" data-chip="saved">Removed</span>';
@@ -369,11 +380,25 @@ function itemHtml(it, kindExtra){
     ? ('Your note: ' + it.note + '. ' + (it.why||''))
     : (it.why||'');
   const canWrite = !!(it.tab && it.key);
+  const title = (p && p.title) ? p.title : it.who;
+  let body;
+  if(p && p.title){
+    const draftLabel = p.draft_kind === 'note' ? 'Note to log in Pipedrive' : 'The message';
+    const draftBlock = p.show_draft
+      ? '<div class="draft-label">'+esc(draftLabel)+'</div><div class="draft" data-draft="1">'+esc(p.draft || it.draft || '')+'</div>'
+      : '<div class="no-draft">No customer message is on this card yet. The bot\'s own plan is under History.</div><div class="draft" data-draft="1" style="display:none">'+esc(it.draft||'')+'</div>';
+    body = '<div class="happened"><b>What happened:</b> '+esc(p.happened||'')+'</div>' +
+      '<div class="want"><b>What '+(esc(p.bot||'the bot'))+' wants to do:</b> '+esc(p.want||'')+'</div>' +
+      '<div class="do">'+esc(p.actions||'')+'</div>' +
+      draftBlock;
+  } else {
+    body = '<div class="draft" data-draft="1">'+esc(it.draft)+'</div>';
+  }
   return '<div class="item" data-id="'+esc(it.id)+'">' +
-    '<div class="item-top"><div class="who">'+esc(it.who)+'</div><div class="age'+(old?' old':'')+'">'+esc(a)+'</div></div>' +
+    '<div class="item-top"><div class="who">'+esc(title)+'</div><div class="age'+(old?' old':'')+'">'+esc(a)+'</div></div>' +
     '<div class="chips">'+chips+'</div>' +
-    '<div class="draft" data-draft="1">'+esc(it.draft)+'</div>' +
-    (it.why_plain !== undefined ? contextHtml(it) : '<div class="why"><b>Why now:</b> '+esc(clip(why,420))+'</div>') +
+    body +
+    (p && p.title ? contextHtml(it) : (it.why_plain !== undefined ? contextHtml(it) : '<div class="why"><b>Why now:</b> '+esc(clip(why,420))+'</div>')) +
     (canWrite
       ? '<div class="actions">' +
           '<button type="button" class="btn solid" data-act="approve">Approve</button>' +
@@ -495,7 +520,7 @@ function wire(){
     if(act === 'edit'){
       editing = {item, box};
       document.getElementById('edit-who').textContent = item.who;
-      document.getElementById('edit-text').value = box.querySelector('[data-draft]').textContent;
+      document.getElementById('edit-text').value = item.draft || (box.querySelector('[data-draft]') || {}).textContent || '';
       document.getElementById('overlay').classList.add('on');
       document.getElementById('edit-text').focus();
       return;
@@ -578,8 +603,14 @@ function wire(){
         setStatus(status, false, (res && res.error) || 'Could not save the draft.');
         return;
       }
-      box.querySelector('[data-draft]').textContent = text;
+      const draftEl = box.querySelector('[data-draft]');
+      if(draftEl) draftEl.textContent = text;
       item.draft = text;
+      if(item.plain){
+        const instruction = /Approve\s*=\s*Y|load only|[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}/i.test(text);
+        item.plain.draft = instruction ? item.plain.draft : text;
+        item.plain.show_draft = !instruction && !!text;
+      }
       document.getElementById('overlay').classList.remove('on');
       setStatus(status, true, 'Draft saved on ' + res.tab + ' row ' + res.row + '.');
       editing = null;
