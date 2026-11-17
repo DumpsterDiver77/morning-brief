@@ -402,7 +402,9 @@ function render(){
   const peHtml = ((PE.missed_moves||[]).length || (PE.conversion_list||[]).length)
     ? '<div class="px"><div class="sec-kicker">Missed moves (trial)</div><div class="sec-sub">The few moves most worth making today, new business first. Nothing is sent; drafts go out only after your Y on the approvals sheet.</div>' +
         (PE.missed_moves||[]).map(peCard).join('') + '</div>' +
-      ((PE.conversion_list||[]).length ? '<div class="px"><details><summary class="sec-kicker" style="cursor:pointer;">Conversion list (trial): '+PE.conversion_list.length+' leads</summary>' + PE.conversion_list.map(peCard).join('') + '</details></div>' : '')
+      ((PE.conversion_list||[]).length ? '<div class="px"><details><summary class="sec-kicker" style="cursor:pointer;">Conversion list (trial): '+PE.conversion_list.length+' leads</summary>' + PE.conversion_list.map(peCard).join('') + '</details></div>' : '') +
+      ((PE.midday||[]).length ? '<div class="px"><div class="sec-kicker">Since this morning</div>' + PE.midday.map(m => '<div class="card" style="padding:10px 14px;border-left:4px solid #C8102E;"><div class="role">'+esc(m.kind||'')+' \u00b7 '+esc(m.at||'')+'</div><b>'+esc(m.headline||'')+'</b><div>'+esc(m.why||'')+'</div></div>').join('') + '</div>' : '') +
+      (PE.campaigns||[]).map(cp => '<div class="px"><div class="card" style="padding:12px 14px;border-style:dashed;"><div class="role">'+(cp.kind==='season'?'Seasonal push':'Trade show prep')+' (trial)</div><h2 style="margin:4px 0;">'+esc(cp.title||'')+'</h2>' + ((cp.accounts||[]).length ? '<div>Accounts that pass every gate: '+cp.accounts.map(a => esc(a.company)).join(', ')+'</div>' : '') + '<ol style="margin:6px 0 0 18px;padding:0;">'+(cp.steps||[]).map(x => '<li>'+esc(x)+'</li>').join('')+'</ol>' + (cp.draft ? '<div class="draft" style="margin-top:6px;"><b>Draft</b>: '+esc(cp.draft)+'</div>' : '') + '</div></div>').join('')
     : '';
 
   const did = (v.did && v.did.length)
