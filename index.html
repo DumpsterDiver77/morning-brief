@@ -50,6 +50,10 @@ body{margin:0;padding:0;background:#EFEFED;font-family:Arial,Helvetica,sans-seri
 .chip{display:inline-block;padding:2px 8px;border-radius:9px;background:#F5F5F4;color:#6E6E6C;font-size:11px;font-weight:bold;margin-right:4px;}
 .chip.hold{background:#FFF8E1;color:#7A5D00;}
 .chip.saved{background:#E8F6EE;color:#1B6B3A;}
+.reason-chip,.pe-rchip{display:inline-block;padding:6px 10px;margin:0 6px 6px 0;border:1px solid #ccc;border-radius:16px;background:#fff;color:#1F1F1F;font:inherit;font-size:13px;cursor:pointer;}
+.reason-chip:hover,.pe-rchip:hover{background:#F5F5F4;}
+.pe-reason-row{margin-top:8px;}
+.pe-reason-label{font-size:12px;color:#6E6E6C;margin:0 0 4px 0;}
 .draft{margin-top:8px;padding:10px 12px;background:#F5F5F4;border-left:3px solid #FF2800;border-radius:6px;font-size:14px;color:#1F1F1F;line-height:1.5;white-space:pre-wrap;word-break:break-word;}
 .why{margin-top:7px;font-size:12.5px;color:#6E6E6C;line-height:1.5;}
 .why b{color:#1F1F1F;}
@@ -136,11 +140,13 @@ table.grid thead th{border-top:0;font-size:11px;color:#6E6E6C;font-weight:normal
 <div id="reason-overlay" class="overlay" role="dialog" aria-modal="true">
   <div class="modal reason">
     <h3 id="reason-title">Remove</h3>
-    <label for="reason-text">Reason <span class="hint">(optional)</span></label>
+    <p class="note" id="reason-hint">Tap a reason to finish in one tap. The save starts in the background.</p>
+    <div id="reason-chips" class="pe-reason-row"></div>
+    <label for="reason-text">Other <span class="hint">(optional)</span></label>
     <textarea id="reason-text"></textarea>
     <div class="row">
       <button type="button" class="btn" id="reason-cancel">Cancel</button>
-      <button type="button" class="btn solid" id="reason-yes">Yes</button>
+      <button type="button" class="btn solid" id="reason-yes">Save other</button>
     </div>
   </div>
 </div>
@@ -476,26 +482,25 @@ function render(){
     const last = (c.last_two_touches||[]).map(peTouch).filter(Boolean);
     const plan = (c.plan||[]).map(x => '<li>'+esc(x)+'</li>').join('');
     const happened = String(c.why_now||'').replace(/\brc_transcript\b/ig,'call').replace(/\bringcentral\b/ig,'call');
-    const dr = draftText
-      ? '<div class="happened"><b>What we\'d send:</b></div><div class="draft" data-draft="1">'+esc(draftText)+'</div>'
-      : '';
+    const dr = '<div class="happened"><b>What we\'d send:</b> edit right here, then tap once. The tap saves this draft too.</div>'
+      + '<textarea class="pe-draft-edit" data-draft="1" rows="3" style="width:100%;margin-top:6px;padding:8px;border:1px solid #ccc;border-radius:6px;font:inherit;box-sizing:border-box;">'+esc(draftText)+'</textarea>'
+      + '<div class="role" style="margin-top:4px;">Other reason (optional; saved with the same tap):</div>'
+      + '<input type="text" class="pe-note" style="width:100%;margin:4px 0 0 0;padding:6px 8px;border:1px solid #ddd;border-radius:6px;font:inherit;box-sizing:border-box;" value="" placeholder="Other">';
     const details = plan
       ? '<details class="hist pe-plan-details"><summary>Who would handle this</summary><ol>'+plan+'</ol></details>'
       : '';
-    const editBtn = draftText
-      ? '<button type="button" class="pe-edit" style="padding:6px 10px;border:1px solid #ccc;border-radius:6px;background:#fff;cursor:pointer;">Edit</button>'
-      : '';
-    const btns = [['do_it','Do it'],['not_now','Not now'],['not_useful','Not useful'],['never','Never this']].map(b => '<button type="button" class="pe-tap" data-tap="'+b[0]+'" style="padding:6px 10px;border:1px solid #ccc;border-radius:6px;background:#fff;cursor:pointer;">'+b[1]+'</button>').join('') + editBtn;
+    const btns = [['do_it','Do it'],['not_now','Not now'],['not_useful','Not useful'],['never','Never this']].map(b => '<button type="button" class="pe-tap" data-tap="'+b[0]+'" style="padding:6px 10px;border:1px solid #ccc;border-radius:6px;background:#fff;cursor:pointer;">'+b[1]+'</button>').join('');
     return '<div class="card" style="padding:12px 14px;" data-pe-key="'+esc(c.account_key||'')+'" data-pe-play="'+esc(c.play||'')+'" data-pe-contact="'+esc(c.contact||'')+'" data-pe-company="'+esc(c.company||'')+'" data-pe-headline="'+esc(c.headline||'')+'" data-draft="'+esc(draftText)+'">' +
       (c.label ? '<div class="role">'+esc(c.label)+'</div>' : '') +
       '<h2 style="margin:4px 0;">'+esc(c.headline||'')+'</h2>' +
       (happened ? '<div class="happened"><b>What happened:</b> '+esc(happened)+'</div>' : '') +
       (last.length ? '<div class="role" style="margin-top:4px;">'+esc(last.join(' \u00b7 '))+'</div>' : '') +
       dr + details +
-      '<div class="pe-fb" style="margin-top:8px;display:flex;flex-wrap:wrap;gap:6px;">' + btns + '<span class="pe-status" style="font-size:12px;color:#6E6E6C;align-self:center;"></span></div></div>';
+      '<div class="pe-fb" style="margin-top:8px;display:flex;flex-wrap:wrap;gap:6px;">' + btns + '<span class="pe-status" style="font-size:12px;color:#6E6E6C;align-self:center;"></span></div>' +
+      '<div class="pe-reason-row" hidden></div></div>';
   };
   const peHtml = ((PE.missed_moves||[]).length || (PE.conversion_list||[]).length)
-    ? '<div class="px"><div class="sec-kicker">Missed moves (trial)</div><div class="sec-sub">The few moves most worth making today, new business first. Nothing is sent; drafts go out only after your Y on the approvals sheet.</div>' +
+    ? '<div class="px"><div class="sec-kicker">Missed moves (trial)</div><div class="sec-sub">The few moves most worth making today, new business first. A Do it tap is the approval. Edit the draft on the card, then tap once — no extra confirm. Nothing is sent until Charlie or Dash finishes the usual checks.</div>' +
         (PE.missed_moves||[]).map(peCard).join('') + '</div>' +
       ((PE.conversion_list||[]).length ? '<div class="px"><details><summary class="sec-kicker" style="cursor:pointer;">Conversion list (trial): '+PE.conversion_list.length+' leads</summary>' + PE.conversion_list.map(peCard).join('') + '</details></div>' : '') +
       ((PE.midday||[]).length ? '<div class="px"><div class="sec-kicker">Since this morning</div>' + PE.midday.map(m => '<div class="card" style="padding:10px 14px;border-left:4px solid #C8102E;"><div class="role">'+esc(m.kind||'')+' \u00b7 '+esc(m.at||'')+'</div><b>'+esc(m.headline||'')+'</b><div>'+esc(m.why||'')+'</div></div>').join('') + '</div>' : '') +
@@ -571,26 +576,30 @@ function wire(){
       return;
     }
     const applyApproval = (reason) => {
-      btn.disabled = true;
-      setStatus(status, true, 'Saving\u2026');
+      const writtenApprove = {approve:'Y', hold:'Hold', remove:'N'}[act] || '';
+      const label = {Y:'Approved', Hold:'On hold', N:'Removed'}[writtenApprove] || 'Saved';
+      const whyBit = reason ? ' (' + reason + ')' : '';
+      // Optimistic: show the result immediately; the network write is in the background (A0447).
+      item.approve = writtenApprove;
+      if(reason) item.note = reason;
+      const chips = box.querySelector('.chips');
+      if(chips){
+        chips.querySelectorAll('[data-chip]').forEach(c => c.remove());
+        if(writtenApprove === 'Hold') chips.insertAdjacentHTML('beforeend','<span class="chip hold" data-chip="hold">On hold</span>');
+        if(writtenApprove === 'Y') chips.insertAdjacentHTML('beforeend','<span class="chip saved" data-chip="saved">Approved</span>');
+        if(writtenApprove === 'N') chips.insertAdjacentHTML('beforeend','<span class="chip" data-chip="saved">Removed</span>');
+      }
+      setStatus(status, true, 'Saved: ' + label + whyBit);
       apiSetApproval(item, act, res => {
-        btn.disabled = false;
         if(!res || !res.ok){
-          setStatus(status, false, (res && res.error) || 'Could not update the row.');
+          setStatus(status, false, (res && res.error) || 'Could not update the row. Tap again to retry.');
           return;
         }
-        const label = {Y:'Approved', Hold:'On hold', N:'Removed'}[res.written && res.written.approve] || 'Saved';
         item.approve = res.written.approve;
         if(res.written && res.written.reason) item.note = res.written.reason;
-        const chips = box.querySelector('.chips');
-        chips.querySelectorAll('[data-chip]').forEach(c => c.remove());
-        if(res.written.approve === 'Hold') chips.insertAdjacentHTML('beforeend','<span class="chip hold" data-chip="hold">On hold</span>');
-        if(res.written.approve === 'Y') chips.insertAdjacentHTML('beforeend','<span class="chip saved" data-chip="saved">Approved</span>');
-        if(res.written.approve === 'N') chips.insertAdjacentHTML('beforeend','<span class="chip" data-chip="saved">Removed</span>');
         setStatus(status, true, label + ' \u2014 saved on ' + res.tab + ' row ' + res.row + '.');
       }, err => {
-        btn.disabled = false;
-        setStatus(status, false, String(err && err.message ? err.message : err));
+        setStatus(status, false, String(err && err.message ? err.message : err) + '. Tap again to retry.');
       }, reason || '');
     };
     if(act === 'remove'){ openReasonPopup('Remove', applyApproval); return; }
@@ -683,9 +692,10 @@ function peMark(card, tap, note){
   const st = card.querySelector('.pe-status'); if(st) st.textContent = note || '';
 }
 function peCurrentDraft(card){
+  const ta = card.querySelector('textarea.pe-draft-edit');
+  if(ta) return ta.value;
   const el = card.querySelector('[data-draft]');
-  if(el && el.getAttribute('data-draft') !== '1' && el.getAttribute('data-draft') != null && el.getAttribute('data-draft') !== '')
-    return el.getAttribute('data-draft');
+  if(el && el.tagName === 'TEXTAREA') return el.value;
   if(card.getAttribute('data-draft')) return card.getAttribute('data-draft');
   const body = card.querySelector('.draft');
   return body ? (body.textContent || '') : '';
@@ -693,11 +703,93 @@ function peCurrentDraft(card){
 function peSetDraft(card, text){
   const t = String(text||'');
   card.setAttribute('data-draft', t);
+  const ta = card.querySelector('textarea.pe-draft-edit');
+  if(ta) ta.value = t;
   const box = card.querySelector('.draft');
-  if(box){
+  if(box && box.tagName !== 'TEXTAREA'){
     box.setAttribute('data-draft', '1');
     box.textContent = t;
   }
+}
+/* A0445: one tap saves draft+action. UI updates immediately; the network write is queued. */
+const peSaveQueue = [];
+let peSaving = false;
+window.__peSaveTimes = window.__peSaveTimes || [];
+function peEnqueue(job){
+  peSaveQueue.push(job);
+  peDrain();
+}
+function peDrain(){
+  if(peSaving) return;
+  const job = peSaveQueue.shift();
+  if(!job) return;
+  peSaving = true;
+  const t0 = (typeof performance !== 'undefined' && performance.now) ? performance.now() : Date.now();
+  const finish = (ok, res) => {
+    const t1 = (typeof performance !== 'undefined' && performance.now) ? performance.now() : Date.now();
+    const ms = Math.round(t1 - t0);
+    window.__peSaveTimes.push({ok:!!ok, ms:ms, tap:job.tap, at:Date.now()});
+    peSaving = false;
+    try { job.done(ok, res, ms); } catch (e) {}
+    peDrain();
+  };
+  if(!job.payload || job.skipNetwork){ finish(true, {ok:true, local:true}); return; }
+  apiPost('feedback', job.payload,
+    res => finish(!!(res && res.ok), res),
+    e => finish(false, e));
+}
+function peCommit(card, tap, reason){
+  const draft = peCurrentDraft(card);
+  const whyBit = reason ? ' (' + reason + ')' : '';
+  const note = card.querySelector('.pe-note');
+  if(note && reason && !note.value) note.value = reason;
+  // Optimistic: one tap, no confirm, show saved immediately (A0445/A0447).
+  peMark(card, tap, 'Saved: ' + (PE_LABEL[tap]||tap) + whyBit);
+  const payload = API_URL ? withLink({
+    account_key: card.dataset.peKey, play: card.dataset.pePlay,
+    headline: card.dataset.peHeadline || (card.querySelector('h2')||{}).textContent || '',
+    contact: card.dataset.peContact || '', company: card.dataset.peCompany || '',
+    draft: draft
+  }, {tap: tap, reason: reason || ''}) : null;
+  peEnqueue({
+    tap: tap,
+    skipNetwork: !API_URL,
+    payload: payload,
+    done: (ok, res, ms) => {
+      if(ok){
+        const extra = (res && res.reason) ? ' (' + res.reason + ')' : whyBit;
+        peMark(card, tap, 'Saved: ' + (PE_LABEL[tap]||tap) + extra + (ms != null ? ' \u00b7 ' + ms + ' ms' : ''));
+      } else {
+        peMark(card, '', 'Not saved: ' + ((res && res.error) || (res && res.message) || res || 'try again') + '. Tap again to retry.');
+      }
+    }
+  });
+}
+const PE_REASONS = ['Already handled','Wrong person','Not my account','Bad timing','Not a fit','Duplicate','Wrong info','Already talked to them'];
+const PE_SNOOZE = ['1 week','2 weeks','1 month'];
+function peNeedReason(tap){
+  return tap === 'not_now' || tap === 'not_useful' || tap === 'never';
+}
+function peShowReasons(card, tap){
+  const row = card.querySelector('.pe-reason-row');
+  if(!row){ peCommit(card, tap, String((card.querySelector('.pe-note')||{}).value||'').trim()); return; }
+  document.querySelectorAll('.pe-reason-row').forEach(r => { if(r !== row){ r.hidden = true; r.innerHTML = ''; } });
+  const chips = (tap === 'not_now' ? PE_SNOOZE.map(l => ({label:l, snooze:true})).concat(PE_REASONS.map(l => ({label:l}))) : PE_REASONS.map(l => ({label:l})));
+  const title = tap === 'not_now' ? 'Snooze or tell us why. One tap saves.' : 'Why? One tap saves.';
+  row.innerHTML = '<div class="pe-reason-label">'+title+'</div>' +
+    chips.map(c => '<button type="button" class="pe-rchip" data-reason="'+c.label+'">'+c.label+'</button>').join('') +
+    '<button type="button" class="pe-rchip" data-reason="__other">Save other</button>';
+  row.hidden = false;
+  row.querySelectorAll('.pe-rchip').forEach(chip => chip.onclick = ev => {
+    ev.preventDefault(); ev.stopPropagation();
+    let reason = chip.getAttribute('data-reason') || '';
+    if(reason === '__other'){
+      reason = String((card.querySelector('.pe-note')||{}).value || '').trim();
+      if(!reason){ const n = card.querySelector('.pe-note'); if(n){ n.focus(); } return; }
+    }
+    row.hidden = true;
+    peCommit(card, tap, reason);
+  });
 }
 function peWire(){
   const saved = (PAYLOAD && PAYLOAD.engine_taps) || {};
@@ -705,35 +797,19 @@ function peWire(){
     const s = saved[card.dataset.peKey + '|' + card.dataset.pePlay];
     if(s && s.draft) peSetDraft(card, s.draft);
     if(s && s.tap) peMark(card, s.tap, 'Saved: ' + (PE_LABEL[s.tap]||s.tap) + (s.reason ? ' (' + s.reason + ')' : ''));
-    const editBtn = card.querySelector('.pe-edit');
-    if(editBtn){
-      editBtn.onclick = () => {
-        editing = {kind:'engine', card: card};
-        const title = document.getElementById('edit-title');
-        if(title) title.textContent = 'Edit what we would send';
-        document.getElementById('edit-who').textContent = (card.querySelector('h2')||{}).textContent || '';
-        document.getElementById('edit-text').value = peCurrentDraft(card);
-        document.getElementById('overlay').classList.add('on');
-        document.getElementById('edit-text').focus();
-      };
-    }
+    if(s && s.reason){ const note = card.querySelector('.pe-note'); if(note && !note.value) note.value = s.reason; }
   });
   document.querySelectorAll('.pe-tap').forEach(btn => btn.onclick = () => {
     const card = btn.closest('[data-pe-key]'); const tap = btn.dataset.tap;
-    const save = (reason) => {
-      if(!API_URL){ peMark(card, '', 'Local preview: not saved.'); return; }
-      peMark(card, tap, 'Saving\u2026');
-      apiPost('feedback', withLink({
-        account_key: card.dataset.peKey, play: card.dataset.pePlay,
-        headline: card.dataset.peHeadline || (card.querySelector('h2')||{}).textContent || '',
-        contact: card.dataset.peContact || '', company: card.dataset.peCompany || '',
-        draft: peCurrentDraft(card)
-      }, {tap: tap, reason: reason || ''}),
-        res => { const why = (res && res.reason != null && res.reason !== '') ? res.reason : (reason || ''); if(res && res.ok){ peMark(card, tap, 'Saved: ' + PE_LABEL[tap] + (why ? ' (' + why + ')' : '')); } else { peMark(card, '', 'Not saved: ' + ((res && res.error) || 'try again')); } },
-        e => peMark(card, '', 'Not saved: ' + String(e && e.message ? e.message : e)));
-    };
-    if(tap === 'not_useful' || tap === 'never'){ openReasonPopup(PE_LABEL[tap] || tap, save); return; }
-    save('');
+    const reason = String((card.querySelector('.pe-note') || {}).value || '').trim();
+    if(peNeedReason(tap) && !reason){
+      peShowReasons(card, tap);
+      peMark(card, tap, 'Pick a reason, or type Other and tap Save other');
+      return;
+    }
+    const row = card.querySelector('.pe-reason-row');
+    if(row){ row.hidden = true; row.innerHTML = ''; }
+    peCommit(card, tap, reason);
   });
 }
 
@@ -744,6 +820,23 @@ function openReasonPopup(title, onYes){
   const ta = document.getElementById('reason-text');
   ta.value = '';
   ta.removeAttribute('placeholder');
+  const box = document.getElementById('reason-chips');
+  const finish = (text) => {
+    const cb = reasonCb;
+    closeReasonPopup();
+    if(cb) cb(text || '');
+  };
+  if(box){
+    const list = PE_REASONS.slice();
+    box.innerHTML = list.map(l => '<button type="button" class="reason-chip" data-reason="'+l+'">'+l+'</button>').join('') +
+      '<button type="button" class="reason-chip" data-reason="__none">No reason</button>';
+    box.querySelectorAll('.reason-chip').forEach(chip => chip.onclick = ev => {
+      ev.preventDefault(); ev.stopPropagation();
+      const v = chip.getAttribute('data-reason') || '';
+      if(v === '__none'){ finish(''); return; }
+      finish(v);
+    });
+  }
   document.getElementById('reason-overlay').classList.add('on');
   ta.focus();
 }
